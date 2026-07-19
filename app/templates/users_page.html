@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Registered Users — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">🧿</div>
+      Face Search Tool
+    </div>
+    <div class="topbar-right">
+      <a class="logout-link" href="/admin/">Dashboard</a>
+      <a class="logout-link" href="/admin/activity">Activity Log</a>
+      <a class="logout-link" href="/admin/logout">Log out</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Registered Users</h1>
+        <p>Everyone who has signed up to use the API/docs, and what they've done.</p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Users</div>
+        <div class="stat-value accent">{{ total_users }}</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      {% if users %}
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Registered</th>
+            <th>Recent Activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td class="face-id">{{ u.username }}</td>
+            <td class="dim-text">{{ u.created_at[:19].replace('T', ' ') }}</td>
+            <td>
+              {% set activity = activity_by_user.get(u.username, []) %}
+              {% if activity %}
+                {% for a in activity[:3] %}
+                  <span class="badge badge-{{ a.action }}" style="margin-right:6px; margin-bottom:4px; display:inline-block;">
+                    {{ a.action }}: {{ a.face_id }}
+                  </span>
+                {% endfor %}
+                {% if activity|length > 3 %}
+                  <span class="dim-text">+{{ activity|length - 3 }} more</span>
+                {% endif %}
+              {% else %}
+                <span class="dim-text">No activity yet</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="icon">👤</div>
+        <p>No users registered yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

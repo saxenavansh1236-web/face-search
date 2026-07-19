@@ -1,0 +1,15 @@
+services:
+  face-search-tool:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - facedb_data:/app/face_db
+    environment:
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    restart: unless-stopped
+
+volumes:
+  facedb_data:

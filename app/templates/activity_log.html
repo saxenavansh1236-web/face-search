@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Activity Log — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">🧿</div>
+      Face Search Tool
+    </div>
+    <div class="topbar-right">
+      <a class="logout-link" href="/admin/">Back to Dashboard</a>
+      <a class="logout-link" href="/admin/logout">Log out</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Activity Log</h1>
+        <p>Most recent 100 actions across indexing, editing, and deleting faces.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      {% if entries %}
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Action</th>
+            <th>Face ID</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td class="dim-text">{{ e.timestamp[:19].replace('T', ' ') }}</td>
+            <td><span class="badge badge-{{ e.action }}">{{ e.action }}</span></td>
+            <td class="face-id">{{ e.face_id }}</td>
+            <td class="dim-text">{{ e.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="icon">📜</div>
+        <p>No activity recorded yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

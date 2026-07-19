@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+
+  {% if message %}
+  <div class="toast">{{ message }}</div>
+  {% endif %}
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">🧿</div>
+      Face Search Tool
+    </div>
+    <div class="topbar-right">
+      <span class="pill">Model: {{ model_name }}</span>
+      <span class="pill">Threshold: {{ match_threshold }}</span>
+      <a class="logout-link" href="/admin/activity">Activity Log</a>
+      <a class="logout-link" href="/admin/users">Users</a>
+      <a class="logout-link" href="/admin/export?format=json">Export JSON</a>
+      <a class="logout-link" href="/admin/export?format=csv">Export CSV</a>
+      <a class="logout-link" href="/admin/logout">Log out</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Indexed Faces</h1>
+        <p>Manage every face currently stored in the vector database.</p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Faces</div>
+        <div class="stat-value accent">{{ total_count }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Embedding Model</div>
+        <div class="stat-value" style="font-size:1.2rem;">{{ model_name }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Match Threshold</div>
+        <div class="stat-value success">{{ match_threshold }}</div>
+      </div>
+    </div>
+
+    <form method="get" action="/admin/" class="toolbar">
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input type="text" name="q" value="{{ query }}" placeholder="Search by Face ID, person, or source...">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:auto;">Search</button>
+    </form>
+
+    <!-- Bulk-delete form: empty, lives on its own. Checkboxes below reference
+         it via the form="bulk-delete-form" attribute, so they don't need to
+         be physically nested inside this tag (nesting <form> is invalid HTML
+         and breaks button clicks unpredictably). -->
+    <form id="bulk-delete-form" method="post" action="/admin/faces/bulk-delete"
+          onsubmit="return confirm('Delete all selected faces? This cannot be undone.');"></form>
+
+    <div class="panel">
+      {% if faces %}
+      <table id="facesTable">
+        <thead>
+          <tr>
+            <th style="width:34px;"><input type="checkbox" onclick="toggleAll(this)"></th>
+            <th>Preview</th>
+            <th>Face ID</th>
+            <th>Person</th>
+            <th>Source</th>
+            <th>Indexed</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in faces %}
+          <tr>
+            <td>
+              <input type="checkbox" name="face_ids" value="{{ f.id }}" form="bulk-delete-form">
+            </td>
+            <td>
+              {% if f.thumbnail %}
+              <img src="{{ f.thumbnail }}" class="thumb" alt="{{ f.id }}">
+              {% else %}
+              <div class="thumb thumb-empty">?</div>
+              {% endif %}
+            </td>
+            <td class="face-id">{{ f.id }}</td>
+            <td>{{ f.person_id or '—' }}</td>
+            <td>{{ f.source_url or '—' }}</td>
+            <td class="dim-text">{{ f.created_at[:10] if f.created_at else '—' }}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button type="button" class="btn-secondary" onclick="toggleEdit('{{ f.id }}')">Edit</button>
+              <button type="submit" form="delete-{{ f.id }}" class="btn-danger"
+                      onclick="return confirm('Delete {{ f.id }}?');">Delete</button>
+            </td>
+          </tr>
+          <tr id="edit-row-{{ f.id }}" class="edit-row" style="display:none;">
+            <td colspan="7">
+              <!-- Independent form, NOT nested inside anything else -->
+              <form method="post" action="/admin/faces/{{ f.id }}/edit" class="edit-form">
+                <input type="text" name="person_id" value="{{ f.person_id }}" placeholder="person_id">
+                <input type="text" name="source_url" value="{{ f.source_url }}" placeholder="source_url">
+                <button type="submit" class="btn-secondary">Save</button>
+              </form>
+            </td>
+          </tr>
+          <!-- Independent delete form per row, referenced by the Delete button above -->
+          <form id="delete-{{ f.id }}" method="post" action="/admin/faces/{{ f.id }}/delete" style="display:none;"></form>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="icon">🗂️</div>
+        <p>No faces match. Use <code>/index-face/</code> or <code>/bulk-index/</code> in the API docs to add some.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if faces %}
+    <div class="bulk-actions">
+      <button type="submit" form="bulk-delete-form" class="btn-danger" onclick="return confirmBulkDelete();">Delete Selected</button>
+    </div>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+      {% for p in range(1, total_pages + 1) %}
+        <a href="/admin/?page={{ p }}{% if query %}&q={{ query }}{% endif %}"
+           class="page-link {% if p == page %}active{% endif %}">{{ p }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+    function toggleAll(source) {
+      document.querySelectorAll('input[name="face_ids"]').forEach(cb => cb.checked = source.checked);
+    }
+    function toggleEdit(id) {
+      const row = document.getElementById('edit-row-' + id);
+      row.style.display = row.style.display === 'none' ? '' : 'none';
+    }
+    function confirmBulkDelete() {
+      const checked = document.querySelectorAll('input[name="face_ids"]:checked');
+      if (checked.length === 0) {
+        alert('Select at least one face first.');
+        return false;
+      }
+      return confirm('Delete ' + checked.length + ' selected face(s)? This cannot be undone.');
+    }
+  </script>
+</body>
+</html>
