@@ -96,12 +96,8 @@ no real secrets) belongs in version control.
 
 These must physically exist before the server starts (Python won't
 create them for you):
-
-```
-app/static/css/     — holds admin.css
-app/templates/      — holds every .html page below
-```
-
+app/static/css/ — holds admin.css
+app/templates/ — holds every .html page below
 Missing `.html` files in `app/templates/` cause
 `jinja2.exceptions.TemplateNotFound` errors at the exact moment that
 page is visited, not at startup — so a missing file might not surface
@@ -111,15 +107,12 @@ traceback and that the whole file was saved (not cut off partway
 through a paste).
 
 Templates needed:
-```
-login.html          — admin login
-dashboard.html       — admin dashboard
-activity_log.html     — admin activity log
-users_page.html        — admin: registered users + their activity
-user_login.html          — public user login
-register.html              — public user registration
-```
-
+login.html — admin login
+dashboard.html — admin dashboard
+activity_log.html — admin activity log
+users_page.html — admin: registered users + their activity
+user_login.html — public user login
+register.html — public user registration
 **A note on large file pastes:** several files in this project
 (especially `ai_detection.py`) are long enough that copy-pasting them
 into an editor can silently truncate partway through, leaving a file
@@ -283,6 +276,21 @@ The following protections are in place:
 - `GET /health` — returns status + how many faces are indexed. No auth
   required.
 
+### Supported image formats
+
+Standard formats (JPEG, PNG, etc.) are read directly. **HEIC/HEIF**
+files (the default format for iPhone photos) are also accepted —
+`upload_utils.py` transparently converts them to JPEG on upload before
+any further processing, since DeepFace's underlying image loader
+(OpenCV) has no native HEIC support, and registering a Pillow-side
+HEIF plugin alone doesn't help with that. This conversion is silent
+(JPEG, quality 95); the original HEIC bytes are not retained.
+
+If a file has a `.heic`/`.heif` extension but isn't actually a valid
+HEIC file (corrupt upload, mislabeled extension), this conversion step
+returns a `422` with a decode-error detail, before the file ever
+reaches quality checks or DeepFace.
+
 Images of any dimension or aspect ratio (tall, wide, square) are
 accepted as-is. Max upload size is capped at `max_upload_size_mb` in
 `app/core/config.py` (default 15 MB).
@@ -346,49 +354,46 @@ techniques that catch a real but limited share of cases:
   "human-edited" detector.
 
 ## Project structure
-
-```
 app/
-  api/routes/
-    index_face.py      — POST /index-face/, PUT /index-face/{id}
-    bulk_index.py        — POST /bulk-index/
-    search_face.py         — POST /search-face/
-    auth.py                  — public register/login/logout, /token,
-                                 /token/refresh, /token/revoke
-    admin.py                   — admin portal (all routes above)
-  services/
-    embedding_service.py      — DeepFace wrapper (shared by index + search)
-    vector_store.py             — ChromaDB add/query/delete/list/edit
-    upload_utils.py               — shared upload handling + size limit
-    thumbnail_utils.py              — generates per-face preview thumbnails
-    ai_detection.py                   — AI-generated/edited image screening
-    activity_log.py                     — JSONL append-only action log (per user)
-    face_quality.py                       — pre-indexing image quality gates
-    user_store.py                           — SQLite-backed user accounts
-                                             (PBKDF2-hashed passwords,
-                                             per-account lockout tracking)
-    jwt_utils.py                            — access/refresh JWT creation,
-                                               decoding, and revocation
-    token_store.py                            — SQLite-backed revoked
-                                                 refresh-token tracking
-  core/
-    config.py                               — all settings + startup
-                                               security warnings
-  templates/                               — see "Required folders" above
-  static/css/
-    admin.css                                 — shared styling for all pages
-  schemas.py                                   — Pydantic request/response models
-  main.py                                       — FastAPI entrypoint: session
-                                                   middleware, rate limiter
-                                                   setup, static/template
-                                                   mounts, custom-themed /docs,
-                                                   admin routes hidden from the
-                                                   public OpenAPI schema
-tests/                                           — pytest suite (ai_detection,
-                                                   face_quality, jwt_utils,
-                                                   user_store, vector_store)
-```
-
+api/routes/
+index_face.py — POST /index-face/, PUT /index-face/{id}
+bulk_index.py — POST /bulk-index/
+search_face.py — POST /search-face/
+auth.py — public register/login/logout, /token,
+/token/refresh, /token/revoke
+admin.py — admin portal (all routes above)
+services/
+embedding_service.py — DeepFace wrapper (shared by index + search)
+vector_store.py — ChromaDB add/query/delete/list/edit
+upload_utils.py — shared upload handling, size limit,
+and HEIC→JPEG conversion
+thumbnail_utils.py — generates per-face preview thumbnails
+ai_detection.py — AI-generated/edited image screening
+activity_log.py — JSONL append-only action log (per user)
+face_quality.py — pre-indexing image quality gates
+user_store.py — SQLite-backed user accounts
+(PBKDF2-hashed passwords,
+per-account lockout tracking)
+jwt_utils.py — access/refresh JWT creation,
+decoding, and revocation
+token_store.py — SQLite-backed revoked
+refresh-token tracking
+core/
+config.py — all settings + startup
+security warnings
+templates/ — see "Required folders" above
+static/css/
+admin.css — shared styling for all pages
+schemas.py — Pydantic request/response models
+main.py — FastAPI entrypoint: session
+middleware, rate limiter
+setup, static/template
+mounts, custom-themed /docs,
+admin routes hidden from the
+public OpenAPI schema
+tests/ — pytest suite (ai_detection,
+face_quality, jwt_utils,
+user_store, vector_store)
 ## The custom /docs page
 
 `/docs` is no longer FastAPI's default Swagger UI look — `main.py`
@@ -455,6 +460,11 @@ fully trust a threshold.
   install.
 - AI/edit detection is heuristic, not a trained model — see the
   dedicated section above for exactly what it does and doesn't catch.
+- HEIC uploads are converted to JPEG at quality 95 before indexing/
+  search — this is a lossy re-encode, so embeddings are generated from
+  the converted JPEG, not the original HEIC bytes. In practice this
+  has negligible effect on match accuracy, but worth knowing if you're
+  trying to reproduce bit-exact results.
 
 ## Scope note
 
