@@ -3,14 +3,28 @@ upload_utils.py
 
 Shared helper for saving an uploaded image to a temp file, enforcing a
 max file-size limit. Image dimensions are never restricted here.
+
+HEIC/HEIF uploads (e.g. straight from an iPhone) are transparently
+converted to JPEG on save. This isn't just for the quality-check step —
+DeepFace loads images via OpenCV (cv2.imread), which has no HEIC
+support at all, regardless of any Pillow-side HEIF plugin being
+registered. Converting once here means every downstream consumer
+(face_quality, embedding_service, thumbnail_utils) just sees a normal
+JPEG and never has to know HEIC was involved.
 """
 
 import tempfile
 from pathlib import Path
 
 from fastapi import UploadFile, HTTPException
+from PIL import Image
+import pillow_heif
 
 from app.core.config import settings
+
+pillow_heif.register_heif_opener()
+
+HEIC_SUFFIXES = {".heic", ".heif"}
 
 
 async def save_upload_to_tempfile(image: UploadFile) -> str:
@@ -39,4 +53,31 @@ async def save_upload_to_tempfile(image: UploadFile) -> str:
             tmp.write(chunk)
         tmp_path = tmp.name
 
+    if suffix.lower() in HEIC_SUFFIXES:
+        tmp_path = _convert_heic_to_jpeg(tmp_path)
+
     return tmp_path
+
+
+def _convert_heic_to_jpeg(heic_path: str) -> str:
+    """
+    Converts a HEIC/HEIF file at heic_path to a new JPEG temp file and
+    deletes the original. Returns the new file's path. Raises
+    HTTPException(422) if the file can't be decoded (e.g. corrupt or
+    not actually HEIC despite its extension).
+    """
+    jpeg_fd_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+
+    try:
+        with Image.open(heic_path) as img:
+            img.convert("RGB").save(jpeg_fd_path, format="JPEG", quality=95)
+    except Exception as exc:
+        Path(jpeg_fd_path).unlink(missing_ok=True)
+        Path(heic_path).unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not decode HEIC/HEIF image: {exc}",
+        )
+
+    Path(heic_path).unlink(missing_ok=True)
+    return jpeg_fd_path
