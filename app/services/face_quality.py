@@ -22,8 +22,14 @@ Checks:
 from typing import Dict, Any
 import numpy as np
 from PIL import Image, ImageFilter
+import pillow_heif
 
 from app.core.config import settings
+
+# Registers HEIC/HEIF support with Pillow so Image.open() can read
+# .heic/.heif files (e.g. straight-from-iPhone photos) without this
+# raising PIL.UnidentifiedImageError. Only needs to run once at import.
+pillow_heif.register_heif_opener()
 
 
 def assess_quality(image_path: str) -> Dict[str, Any]:
