@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     max_upload_size_mb: float = 15.0
     thumbnail_size: int = 96
 
-    admin_username: str = "saxenavansh1236@gmail.com"
-    admin_password: str = "vansh@123"
+    admin_username: str = " "
+    admin_password: str = " "
     session_secret_key: str = "dev-only-change-this-secret-key"
 
     activity_log_path: str = "./face_db/activity_log.jsonl"
