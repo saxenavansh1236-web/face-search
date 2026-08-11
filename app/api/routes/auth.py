@@ -8,6 +8,17 @@ registered and what they've done.
 
 Also issues JWT bearer tokens via /token for programmatic clients that
 can't hold a browser session cookie.
+
+RBAC: get_current_user() returns just the username (unchanged, so
+every existing route keeps working). require_role(min_role) builds on
+top of it and additionally checks the caller's role — either from the
+session (looked up fresh via user_store) or from the "role" claim
+embedded in the JWT access token at issue time. Use require_role() as
+a route dependency to gate an endpoint to investigator/admin, etc.:
+
+    @router.post("/search-face/")
+    def search_face(..., user: str = Depends(require_role("analyst"))):
+        ...
 """
 
 from typing import Optional
@@ -20,10 +31,14 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.services.user_store import create_user, verify_user, user_exists, is_locked_out
+from app.services.user_store import (
+    create_user, verify_user, user_exists, is_locked_out,
+    get_user_role, has_role_at_least, DEFAULT_ROLE, ROLE_RANK,
+)
 from app.services.jwt_utils import (
     create_access_token,
     decode_access_token,
+    decode_access_token_payload,
     create_refresh_token,
     decode_refresh_token,
     revoke_refresh_token,
@@ -58,6 +73,7 @@ def issue_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     Exchanges username/password for a JWT bearer token, for
     programmatic clients that can't hold a browser session cookie.
     Use the returned access_token as: Authorization: Bearer <token>
+    The issued access token embeds the user's current role.
     """
     lockout_msg = _lockout_message(form_data.username)
     if lockout_msg:
@@ -88,6 +104,9 @@ def refresh_token_endpoint(request: Request, body: RefreshRequest):
     Exchanges a still-valid refresh token for a new access token,
     without requiring the client to re-send username/password.
     Use like: POST /token/refresh {"refresh_token": "<refresh token>"}
+    The new access token picks up the user's CURRENT role at refresh
+    time — this is how a role change eventually propagates to a client
+    holding an old access token, once it expires and is refreshed.
     """
     username = decode_refresh_token(body.refresh_token)
     if not username:
@@ -123,7 +142,9 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     Combined auth dependency: accepts EITHER a valid session cookie
     (browser/Swagger UI login) OR a valid JWT bearer token
     (programmatic clients). Use this on endpoints that should work
-    both ways instead of only checking the session.
+    both ways instead of only checking the session. Returns just the
+    username — use require_role() instead if the endpoint needs a
+    minimum role.
     """
     if request.session.get(USER_SESSION_KEY):
         return request.session.get(USERNAME_SESSION_KEY, "unknown")
@@ -138,6 +159,65 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         detail="Not authenticated. Sign in via /login or obtain a token via /token.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def _get_current_user_and_role(request: Request, token: str = Depends(oauth2_scheme)) -> tuple[str, str]:
+    """
+    Like get_current_user, but also returns the caller's role.
+    - Session auth: role is looked up fresh from user_store on every
+      request, so a role change takes effect on the caller's very next
+      request (no stale-role window for browser/session users).
+    - Bearer token auth: role comes from the "role" claim embedded in
+      the access token at issue time — see the staleness note in
+      jwt_utils.py's docstring.
+    """
+    if request.session.get(USER_SESSION_KEY):
+        username = request.session.get(USERNAME_SESSION_KEY, "unknown")
+        role = get_user_role(username) or DEFAULT_ROLE
+        return username, role
+
+    if token:
+        payload = decode_access_token_payload(token)
+        if payload:
+            username = payload.get("sub", "unknown")
+            role = payload.get("role", DEFAULT_ROLE)
+            return username, role
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated. Sign in via /login or obtain a token via /token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def require_role(min_role: str):
+    """
+    Route dependency factory: require_role("investigator") returns a
+    dependency that authenticates the caller (session or bearer token,
+    same as get_current_user) AND requires their role to be at least
+    `min_role` in the ROLES rank order (viewer < analyst < investigator
+    < admin). Raises 403 (not 401) if authenticated but underprivileged
+    — the caller is a known, valid identity; they're just not allowed
+    to do this specific thing.
+
+    Usage:
+        @router.post("/search-face/")
+        def search_face(..., user: str = Depends(require_role("analyst"))):
+            ...
+    """
+    if min_role not in ROLE_RANK:
+        raise ValueError(f"Unknown role '{min_role}' — must be one of {list(ROLE_RANK)}")
+
+    async def _dependency(request: Request, token: str = Depends(oauth2_scheme)) -> str:
+        username, role = await _get_current_user_and_role(request, token)
+        if ROLE_RANK.get(role, -1) < ROLE_RANK[min_role]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires the '{min_role}' role or higher (you have '{role}').",
+            )
+        return username
+
+    return _dependency
 
 
 def is_user_logged_in(request: Request) -> bool:
@@ -205,7 +285,10 @@ def register_submit(
             request, "register.html", {"error": "That username is already taken."}, status_code=409,
         )
 
-    create_user(username, password)
+    # Self-registration always creates the lowest-privilege role
+    # (DEFAULT_ROLE, "viewer"). Elevating to analyst/investigator/admin
+    # is an admin-only action — see admin.py.
+    create_user(username, password, role=DEFAULT_ROLE)
     request.session[USER_SESSION_KEY] = True
     request.session[USERNAME_SESSION_KEY] = username
     return RedirectResponse(url="/docs", status_code=303)
