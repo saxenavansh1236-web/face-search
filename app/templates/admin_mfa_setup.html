@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Set up MFA — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+  <div class="page" style="max-width:480px; margin:60px auto;">
+    <div class="panel" style="padding:32px;">
+      <h1 style="margin-top:0;">Set up two-factor authentication</h1>
+      <p class="dim-text">
+        Scan this QR code with an authenticator app (Google Authenticator,
+        Authy, 1Password, etc.), then enter the 6-digit code it shows to
+        finish setup. You'll only see this screen once.
+      </p>
+
+      <div style="background:#fff; padding:16px; border-radius:8px; display:inline-block; margin:16px 0;">
+        <img src="data:image/svg+xml;base64,{{ qr_svg_b64 }}" alt="MFA QR code" width="220" height="220">
+      </div>
+
+      <p class="dim-text" style="font-size:0.85rem;">
+        Can't scan? Enter this key manually in your app:<br>
+        <code style="user-select:all;">{{ secret }}</code>
+      </p>
+
+      {% if error %}
+      <div class="error-box" style="margin:12px 0; color:#ff5b7a;">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/admin/mfa-setup" style="margin-top:20px;">
+        <label for="code">6-digit code</label><br>
+        <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]{6}"
+               maxlength="6" autocomplete="one-time-code" autofocus required
+               style="font-size:1.2rem; letter-spacing:0.2em; padding:8px 12px; width:160px;">
+        <br><br>
+        <button type="submit" style="padding:10px 20px;">Confirm and finish setup</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
