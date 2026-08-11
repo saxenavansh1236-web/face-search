@@ -26,6 +26,12 @@
       </div>
     </div>
 
+    {% if message %}
+    <div class="panel" style="padding: 12px 16px; margin-bottom: 16px;">
+      {{ message }}
+    </div>
+    {% endif %}
+
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Users</div>
@@ -40,6 +46,7 @@
           <tr>
             <th>Username</th>
             <th>Registered</th>
+            <th>Role</th>
             <th>Recent Activity</th>
           </tr>
         </thead>
@@ -48,6 +55,16 @@
           <tr>
             <td class="face-id">{{ u.username }}</td>
             <td class="dim-text">{{ u.created_at[:19].replace('T', ' ') }}</td>
+            <td>
+              <form method="post" action="/admin/users/{{ u.username }}/role" style="display:flex; align-items:center; gap:6px;">
+                <select name="role" style="padding:4px 6px;">
+                  {% for r in available_roles %}
+                    <option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ r }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" style="padding:4px 10px;">Update</button>
+              </form>
+            </td>
             <td>
               {% set activity = activity_by_user.get(u.username, []) %}
               {% if activity %}
