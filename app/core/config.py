@@ -25,11 +25,12 @@ class Settings(BaseSettings):
     max_upload_size_mb: float = 15.0
     thumbnail_size: int = 96
 
-    admin_username: str = ""
-    admin_password: str = ""
+    admin_username: str = "saxenavansh1236@gmail.com"
+    admin_password: str = "vansh@123"
     session_secret_key: str = "dev-only-change-this-secret-key"
 
     activity_log_path: str = "./face_db/activity_log.jsonl"
+    calibration_data_path: str = "./calibration_data"
 
     # --- Advanced matching pipeline ---
 
@@ -76,6 +77,15 @@ class Settings(BaseSettings):
     # jwt_expiry_minutes so access tokens can be made short-lived
     # (reducing exposure if one leaks) without forcing frequent re-logins.
     jwt_refresh_expiry_days: int = 30
+
+    # --- Admin MFA (TOTP) ---
+    # Requires the admin account to enter a 6-digit code from an
+    # authenticator app (Google Authenticator, Authy, etc.) in addition
+    # to the username/password. The TOTP secret is generated on first
+    # login after this feature is enabled and stored server-side (see
+    # app/services/admin_mfa_store.py) — never in this config file.
+    admin_mfa_enabled: bool = True
+    admin_mfa_issuer_name: str = "Face Search Tool"
 
     class Config:
         env_file = ".env"
