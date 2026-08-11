@@ -12,6 +12,13 @@ Each result gets a confidence label using two thresholds:
   - distance < high_confidence_threshold  -> "high"
   - distance < possible_match_threshold   -> "possible"
   - otherwise                              -> "none"
+
+RBAC: requires the 'viewer' role or higher — i.e. any authenticated,
+registered user can search, since search alone doesn't add or modify
+indexed data. Raise this to require_role("investigator") if you want
+searching itself restricted to a higher-privilege role (e.g. if this
+tool is used for case-based investigations rather than a general
+closed-dataset lookup).
 """
 
 from pathlib import Path
@@ -25,7 +32,7 @@ from app.services.vector_store import search_faces, get_all_faces
 from app.services.upload_utils import save_upload_to_tempfile
 from app.core.config import settings
 from app.services.activity_log import log_activity
-from app.api.routes.auth import get_current_user
+from app.api.routes.auth import require_role
 from app.services.ai_detection import detect_ai_generated
 from app.schemas import SearchFaceResponse, MatchResult
 
@@ -42,7 +49,7 @@ def _confidence_label(distance: float) -> str:
 
 @router.post("/search-face/", response_model=SearchFaceResponse)
 async def search_face(
-    username: str = Depends(get_current_user),
+    username: str = Depends(require_role("viewer")),
     image: UploadFile = File(...),
     top_k: int = Query(20, ge=1, le=50, description="How many raw candidates to fetch before grouping by person."),
     threshold: float = Query(
