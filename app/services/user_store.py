@@ -12,6 +12,12 @@ Also tracks failed login attempts per-username and locks an account
 temporarily after too many failures in a row — this protects a single
 targeted account even if an attacker spreads requests across many IPs
 to dodge the IP-based rate limiting in auth.py.
+
+RBAC: every user has a `role` column, one of ROLES below. Registration
+via /register always creates `viewer` (the lowest-privilege role) —
+nobody can self-register into a higher role. Elevating a user to
+`analyst`/`investigator`/`admin` is an admin-only action performed from
+the admin panel (see admin.py: /admin/users/{username}/role).
 """
 
 import sqlite3
@@ -31,6 +37,12 @@ _DB_PATH = os.path.normpath(os.path.join(settings.db_path, "..", "users.db"))
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
+# Roles, lowest to highest privilege. Numeric rank lets role checks use
+# a simple >= comparison instead of hardcoding role names everywhere.
+ROLES = ["viewer", "analyst", "investigator", "admin"]
+ROLE_RANK = {role: i for i, role in enumerate(ROLES)}
+DEFAULT_ROLE = "viewer"
+
 
 def _get_conn():
     os.makedirs(os.path.dirname(_DB_PATH) or ".", exist_ok=True)
@@ -49,13 +61,18 @@ def init_db():
                 salt TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
-                locked_until TEXT
+                locked_until TEXT,
+                role TEXT NOT NULL DEFAULT 'viewer'
             )
         """)
         # Add columns for pre-existing databases created before lockout
-        # tracking was introduced (ALTER TABLE fails silently if the
-        # column already exists).
-        for column, coltype in [("failed_attempts", "INTEGER NOT NULL DEFAULT 0"), ("locked_until", "TEXT")]:
+        # tracking / RBAC were introduced (ALTER TABLE fails silently if
+        # the column already exists).
+        for column, coltype in [
+            ("failed_attempts", "INTEGER NOT NULL DEFAULT 0"),
+            ("locked_until", "TEXT"),
+            ("role", "TEXT NOT NULL DEFAULT 'viewer'"),
+        ]:
             try:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {coltype}")
             except sqlite3.OperationalError:
@@ -66,15 +83,19 @@ def _hash_password(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
 
 
-def create_user(username: str, password: str) -> bool:
-    """Returns False if the username is already taken."""
+def create_user(username: str, password: str, role: str = DEFAULT_ROLE) -> bool:
+    """Returns False if the username is already taken. `role` defaults
+    to the lowest-privilege role; self-registration (auth.py) never
+    passes a higher role explicitly."""
+    if role not in ROLE_RANK:
+        role = DEFAULT_ROLE
     salt = secrets.token_hex(16)
     password_hash = _hash_password(password, salt)
     try:
         with _get_conn() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
-                (username, password_hash, salt, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO users (username, password_hash, salt, created_at, role) VALUES (?, ?, ?, ?, ?)",
+                (username, password_hash, salt, datetime.now(timezone.utc).isoformat(), role),
             )
         return True
     except sqlite3.IntegrityError:
@@ -150,9 +171,33 @@ def user_exists(username: str) -> bool:
     return row is not None
 
 
+def get_user_role(username: str) -> Optional[str]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT role FROM users WHERE username = ?", (username,)).fetchone()
+    return row["role"] if row else None
+
+
+def set_user_role(username: str, role: str) -> bool:
+    """Returns False if role is invalid or username doesn't exist."""
+    if role not in ROLE_RANK:
+        return False
+    with _get_conn() as conn:
+        cur = conn.execute("UPDATE users SET role = ? WHERE username = ?", (role, username))
+    return cur.rowcount > 0
+
+
+def has_role_at_least(username: str, min_role: str) -> bool:
+    """True if the user's role rank is >= min_role's rank. Unknown
+    users/roles are treated as insufficient (fail closed)."""
+    user_role = get_user_role(username)
+    if user_role is None or min_role not in ROLE_RANK:
+        return False
+    return ROLE_RANK[user_role] >= ROLE_RANK[min_role]
+
+
 def get_all_users() -> List[Dict[str, Any]]:
     with _get_conn() as conn:
-        rows = conn.execute("SELECT username, created_at FROM users ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT username, created_at, role FROM users ORDER BY created_at DESC").fetchall()
     return [dict(r) for r in rows]
 
 
