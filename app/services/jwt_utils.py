@@ -25,6 +25,16 @@ of an otherwise-stateless JWT. Access tokens are NOT individually
 revocable — they're short-lived by design, so the exposure window from
 a leaked one is small; only refresh tokens (which are long-lived) get
 this protection.
+
+RBAC: access tokens embed the user's `role` at issue-time as a "role"
+claim, so role-gated endpoints (see auth.py: require_role()) don't
+need a user_store lookup per request. This means a role change (e.g.
+admin promotes a user to investigator) does NOT take effect for that
+user's already-issued access tokens until they expire and are
+refreshed — a deliberate tradeoff for statelessness. Keep
+jwt_expiry_minutes reasonably short if you need role changes to
+propagate quickly; revoking the user's refresh token forces a full
+re-login sooner if immediate effect is required.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -34,24 +44,33 @@ import jwt as pyjwt
 
 from app.core.config import settings
 from app.services import token_store
+from app.services.user_store import get_user_role, DEFAULT_ROLE
 
 
 def create_access_token(username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes)
-    payload = {"sub": username, "exp": expire, "type": "access"}
+    role = get_user_role(username) or DEFAULT_ROLE
+    payload = {"sub": username, "exp": expire, "type": "access", "role": role}
     return pyjwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> Optional[str]:
     """Returns the username if the token is a valid, unexpired ACCESS
     token, else None. Rejects refresh tokens even if otherwise valid."""
+    payload = decode_access_token_payload(token)
+    return payload.get("sub") if payload else None
+
+
+def decode_access_token_payload(token: str) -> Optional[dict]:
+    """Like decode_access_token, but returns the full payload (so
+    callers can read the "role" claim) instead of just the username."""
     try:
         payload = pyjwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     except pyjwt.PyJWTError:
         return None
     if payload.get("type") != "access":
         return None
-    return payload.get("sub")
+    return payload
 
 
 def create_refresh_token(username: str) -> str:
