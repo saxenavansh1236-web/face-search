@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Verify MFA — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+  <div class="page" style="max-width:420px; margin:80px auto;">
+    <div class="panel" style="padding:32px;">
+      <h1 style="margin-top:0;">Enter your authenticator code</h1>
+      <p class="dim-text">Open your authenticator app and enter the current 6-digit code.</p>
+
+      {% if error %}
+      <div class="error-box" style="margin:12px 0; color:#ff5b7a;">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/admin/mfa-verify">
+        <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}"
+               maxlength="6" autocomplete="one-time-code" autofocus required
+               style="font-size:1.2rem; letter-spacing:0.2em; padding:8px 12px; width:160px;">
+        <br><br>
+        <button type="submit" style="padding:10px 20px;">Verify</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
