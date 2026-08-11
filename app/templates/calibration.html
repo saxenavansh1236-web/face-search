@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Threshold Calibration — Face Search Tool Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">🧿</div>
+      Face Search Tool
+    </div>
+    <div class="topbar-right">
+      <a class="logout-link" href="/admin/">Dashboard</a>
+      <a class="logout-link" href="/admin/activity">Activity Log</a>
+      <a class="logout-link" href="/admin/logout">Log out</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Threshold Calibration</h1>
+        <p>FAR/FRR analysis from labeled test photos at <code>{{ calibration_data_path }}</code>.</p>
+      </div>
+    </div>
+
+    {% if not result.ok %}
+    <div class="panel" style="padding:24px;">
+      <p><strong>Could not run calibration:</strong> {{ result.error }}</p>
+      <p class="dim-text">
+        Expected folder layout:<br>
+        <code>calibration_data/person_001/photo1.jpg</code><br>
+        <code>calibration_data/person_001/photo2.jpg</code><br>
+        <code>calibration_data/person_002/photo1.jpg</code><br>
+        Each subfolder is one person; put 2+ different photos per person
+        for the best genuine-pair coverage, and at least 2 different
+        people total for impostor pairs.
+      </p>
+    </div>
+    {% else %}
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">People / Photos Used</div>
+        <div class="stat-value accent">{{ result.num_people }} / {{ result.num_photos_used }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Genuine Pairs</div>
+        <div class="stat-value">{{ result.num_genuine_pairs }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Impostor Pairs</div>
+        <div class="stat-value">{{ result.num_impostor_pairs }}</div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:20px; margin-bottom:20px;">
+      <h3 style="margin-top:0;">Distance distributions</h3>
+      <table>
+        <thead><tr><th></th><th>Min</th><th>Mean</th><th>Max</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Genuine (same person)</td>
+            <td>{{ result.genuine_distance_min }}</td>
+            <td>{{ result.genuine_distance_mean }}</td>
+            <td>{{ result.genuine_distance_max }}</td>
+          </tr>
+          <tr>
+            <td>Impostor (different people)</td>
+            <td>{{ result.impostor_distance_min }}</td>
+            <td>{{ result.impostor_distance_mean }}</td>
+            <td>{{ result.impostor_distance_max }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="dim-text" style="margin-top:12px;">
+        Ideally genuine max &lt; impostor min — some overlap is normal and
+        is exactly what the threshold below has to trade off.
+      </p>
+    </div>
+
+    <div class="panel" style="padding:20px; margin-bottom:20px;">
+      <h3 style="margin-top:0;">Current threshold: {{ result.current_threshold }}</h3>
+      <p>
+        At this threshold: <strong>FAR = {{ (result.current_threshold_far * 100) | round(2) }}%</strong>
+        (different people wrongly matched),
+        <strong>FRR = {{ (result.current_threshold_frr * 100) | round(2) }}%</strong>
+        (same person wrongly rejected).
+      </p>
+      <p class="dim-text">
+        Equal Error Rate point (FAR ≈ FRR, a common balanced default):
+        threshold {{ result.eer_point.threshold }}
+        (FAR {{ (result.eer_point.far * 100) | round(2) }}%,
+         FRR {{ (result.eer_point.frr * 100) | round(2) }}%).
+        Whether to use EER or bias toward lower FAR (fewer false matches)
+        or lower FRR (fewer missed matches) depends on your use case —
+        this is a starting point, not a mandate.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3 style="padding:16px 20px 0;">FAR / FRR by candidate threshold</h3>
+      <table>
+        <thead>
+          <tr><th>Threshold</th><th>FAR</th><th>FRR</th></tr>
+        </thead>
+        <tbody>
+          {% for row in result.curve %}
+          <tr style="{% if row.threshold == result.current_threshold %}background: rgba(91,140,255,0.08);{% endif %}">
+            <td class="face-id">{{ row.threshold }}{% if row.threshold == result.current_threshold %} (current){% endif %}{% if row.threshold == result.eer_point.threshold %} (EER){% endif %}</td>
+            <td>{{ (row.far * 100) | round(2) }}%</td>
+            <td>{{ (row.frr * 100) | round(2) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if result.skipped %}
+    <div class="panel" style="padding:20px; margin-top:20px;">
+      <h3 style="margin-top:0;">Skipped photos ({{ result.skipped|length }})</h3>
+      <ul>
+        {% for s in result.skipped %}
+        <li class="dim-text">{{ s.path }} — {{ s.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% endif %}
+  </div>
+</body>
+</html>
